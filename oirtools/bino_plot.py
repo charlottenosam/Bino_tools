@@ -26,7 +26,7 @@ import photutils
 
 from lmfit.models import GaussianModel, SkewedGaussianModel, Model
 
-from utils import *
+from .utils import *
 
 mpl.rcParams['font.size'] = 18
 
@@ -133,8 +133,8 @@ class BinoPlotter(object):
         
             # Y positions ----------------------
             if obposval:
-                ax.axhline(obposval, lw=2,  ls='dashed', c='tab:orange', label='Pipeline')
-            ax.axhline(image.shape[0]/2., lw=2,  ls='dashed', c='tab:blue', label='Slit center')
+                ax.axhline(obposval, lw=2,  ls='dashed', c='tab:blue', label='Pipeline')
+            # ax.axhline(image.shape[0]/2., lw=2,  ls='dashed', c='tab:blue', label='Slit center')
         
             try:
                 ax.plot(self.waveA[tab['x_peak']], tab['y_peak'], 'o', c='r', ms=20, mfc='none', mew=2)
