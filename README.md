@@ -2,10 +2,7 @@
 
 ### Installation:
 
-Place this directory in your path and pythonpath. E.g.
-
-	export PATH=$PATH:your_dirs/OIRtools
-	export PYTHONPATH=$PYTHONPATH:your_dirs/OIRtools
+	python setup.py install
 
 ### Dependencies:
 
