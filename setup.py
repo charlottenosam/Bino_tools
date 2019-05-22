@@ -12,11 +12,11 @@ except ImportError:
     setup
 
 setup(
-    name="OIRtools",
+    name="Binotools",
     version='0.1.0',
     author="Charlotte Mason",
     author_email="charlote.mason@cfa.harvard.edu",
-    packages=["oirtools"],
+    packages=["binotools"],
     license="LICENSE",
     description="Tools for dealing with astronomical spectral energy distributions",
     long_description=open("README.md").read(),

@@ -3,3 +3,6 @@
 __pycache/
 .ipynb_checkpoints
 *checkpoints*
+build/
+dist/
+Binotools.egg-info/

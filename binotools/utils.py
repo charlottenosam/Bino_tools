@@ -11,6 +11,7 @@
 
 import pandas as pd
 import numpy as np
+import glob
 
 c=3.e5
 
@@ -25,3 +26,11 @@ def half_gauss(x, amp, cen, FWHM):
 
 def wave_to_kms(wave, mu0):
     return c*(wave-mu0)/mu0
+
+def insensitive_glob(pattern):
+    """
+    Case insensitive find file names
+    """
+    def either(c):
+        return '[%s%s]'%(c.lower(),c.upper()) if c.isalpha() else c
+    return glob.glob(''.join(map(either,pattern)))

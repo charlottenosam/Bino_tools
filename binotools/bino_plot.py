@@ -26,6 +26,7 @@ import photutils
 
 from lmfit.models import GaussianModel, SkewedGaussianModel, Model
 
+import binotools as bt
 from .utils import *
 
 mpl.rcParams['font.size'] = 18
@@ -39,12 +40,18 @@ class BinoPlotter(object):
     Plot Binospec spectra
     """
 
-    def __init__(self, spec2D_file_name, psf_ypix=4.):
+    def __init__(self, spec2D_file_name, psf_ypix=4., transmission=None):
         """
         Load Binospec 2D spectra (slits) and make nice plots
         """
 
         self.hdu_list = fits.open(spec2D_file_name)
+        
+        # Get y position from header
+        try:
+            self.posy = bt.get_ypos_from_2Dslits(spec2D_file_name)
+        except:
+            self.posy = None
 
         # Get basic header params (wavelength) for all targets
         self.header = self.hdu_list[1].header
@@ -55,14 +62,20 @@ class BinoPlotter(object):
 
         self.psf_ypix = 4. # TODO fit the stars in here
 
+        self.transmission  = np.ones_like(self.waveA)
+        self.telluric_corr = False
+        if type(transmission) == np.ndarray:
+            self.transmission  = transmission
+            self.telluric_corr = True
+
         return
 
     # -----------------------
     def spec2D(self, target, wave_lineA=8300., wave_limA=50, 
-                   smooth=None, obposval=None, posy_d=10, 
+                smooth=None, posy=None, posy_width=10, 
                 plot=True, plottitle=None, cmap='Greys',
                 vmin_sig=-0.5, vmax_sig=3., 
-                med_subtract=False):
+                find_peaks=True, med_subtract=False):
 
         """
         Load 2D spectrum and plot it
@@ -72,12 +85,21 @@ class BinoPlotter(object):
             wave_limA:  wavelength limits to plot around [A] (i.e. plot wave_line \pm wave_limA)
             vmin_sig:   image limit [vmin_sig*np.std(image)]
             vmax_sig:   image limit [vmax_sig*np.std(image)]
+            smooth:     pixel std kernel for Gaussian smoothing [1 is good, None is default - no smoothing]
+            posy:       y position for extraction and peak finding
+            posy_width: y width of slit for extraction (just plotted here, not used)
+            find_peaks: look for peaks within 2 psf of posy [default = True]
 
         """
 
         # Load 2D spectrum for your target
         hdu   = self.hdu_list[target]
         image = hdu.data
+
+        if self.telluric_corr:
+            # Do telluric correction NB this doesn't do wavelength or absolute rescaling!
+            # TODO
+            image /= self.transmission
 
         extent = [self.waveA.min(), self.waveA.max(),
                   0.5, image.shape[0]-0.5]
@@ -97,28 +119,28 @@ class BinoPlotter(object):
         imsky      = image.copy()
         imsky[10:-10] = np.nan
         noise = np.nanstd(imsky, axis=0)
+
+        if posy is None:
+            posy = self.posy[target - 1]
                 
-        # Crop the regions outside of the wavelength limits 
-        #(this makes finding peaks the image nicer)
-        index_centered = np.where(np.abs(self.waveA - wave_lineA) > wave_limA/2.)
-        kernel_basic = Gaussian2DKernel(1.)
-        imcentered = convolve(image, kernel_basic)
-        imcentered[:,index_centered] = np.nan    
-        imcentered[:,np.where(noise > 1.*np.nanmedian(noise))] = np.nan    
+        posy_peak = None
+        if find_peaks:
+            # Crop the regions outside of the wavelength limits 
+            #(this makes finding peaks the image nicer)
+            wave_index_centered = np.where(np.abs(self.waveA - wave_lineA) > wave_limA/2.)
+            
+            # Smooth
+            kernel_basic   = Gaussian2DKernel(1.)
+            imcentered = convolve(image, kernel_basic)
+            imcentered[:,wave_index_centered] = np.nan    
+            imcentered[:,np.where(noise > 1.*np.nanmedian(noise))] = np.nan    
+            imcentered[:int(np.rint(posy-2*posy_width)),:] = np.nan    
+            imcentered[int(np.rint(posy+2*posy_width))+1:,:] = np.nan  
 
-        # Simple peak finder #TODO make this better (a la Maseda+16?)
-        tab = photutils.detection.find_peaks(imcentered, threshold=1.*np.nanstd(imcentered),
-                                             box_size=20, npeaks=1, subpixel=False,
-                                             border_width=10)  
-        # Try to find y positions
-        try:
-            posy = tab['y_peak']
-        except:
-            if obposval:
-                posy = obposval
-            else:
-                posy = image.shape[0]/2.
-
+            # Simple peak finder #TODO make this better (a la Maseda+16?)
+            tab = photutils.detection.find_peaks(imcentered, threshold=1.*np.nanstd(imcentered),
+                                                box_size=20, npeaks=1, subpixel=False,
+                                                border_width=1)
         if plot:
 
             fig = plt.figure(figsize=(14,5))
@@ -126,45 +148,47 @@ class BinoPlotter(object):
             ax.annotate(plottitle, xy=(0.,0.94), xycoords='axes fraction')
         
             im = ax.imshow(implot, origin='lower', cmap=cmap, aspect='equal', extent=extent,
-                          vmin=vmin_sig*np.nanstd(image), vmax=vmax_sig*np.nanstd(image))
+                           vmin=vmin_sig*np.nanstd(image), vmax=vmax_sig*np.nanstd(image))
         
          
             ax.axvline(wave_lineA, ymin=0.6, ymax=1., lw=5, c='tab:orange')
         
             # Y positions ----------------------
-            if obposval:
-                ax.axhline(obposval, lw=2,  ls='dashed', c='tab:blue', label='Pipeline')
-            # ax.axhline(image.shape[0]/2., lw=2,  ls='dashed', c='tab:blue', label='Slit center')
+            if posy:
+                ax.axhline(posy, lw=2,  ls='dashed', c='tab:blue', label='Pipeline')
         
             try:
+                posy_peak = tab['y_peak']
                 ax.plot(self.waveA[tab['x_peak']], tab['y_peak'], 'o', c='r', ms=20, mfc='none', mew=2)
-                ax.axhline(tab['y_peak'], lw=2,  ls='dashed', c='tab:red', label='Peak finder')
+                ax.axhline(posy_peak, lw=2,  ls='dashed', c='tab:red', label='Peak finder')
             except:
-                pass  
+                posy_peak = posy  
         
             ax.legend()
-            ax.axhline(posy+posy_d/2., lw=2,  ls='dotted', c='tab:red')
-            ax.axhline(posy-posy_d/2., lw=2,  ls='dotted', c='tab:red')
+            ax.axhline(posy_peak+posy_width/2., lw=2,  ls='dotted', c='tab:red')
+            ax.axhline(posy_peak-posy_width/2., lw=2,  ls='dotted', c='tab:red')
             
             ax.set_xlim((wave_lineA - wave_limA), (wave_lineA + wave_limA))
             ax.set_xlabel('Wavelength [$\mathrm{\AA}$]')
             ax.set_ylabel('Position [pixels]')
         
-        return image, posy
+        return image, posy_peak
             
 
     # =========================
 
-    def spec1D(self, image, wave_lineA=8300., wave_limA=50, StoN=False,
+    def spec1D(self, image, wave_lineA=8300., wave_limA=50, 
+                StoN=False, flux_unit='erg cm$^{-2}$ s$^{-1}$ $\mathrm{\AA}^{-1}$',
                 posy_errmask_pix=[None,None],
-                posy_med=None, posy_d=10,
+                posy_med=None, posy_width=10, 
+                fit=False,
                 med_subtract=False, plot=True, smooth=False, plottitle=None):
         """
         Plot 1D spectra
 
         INPUTS
-            posy_med: y position of source
-            posy_d:   y length of source aperture
+            posy_med:   y position of source
+            posy_width: y width of source aperture
         """
 
         if med_subtract:
@@ -178,7 +202,7 @@ class BinoPlotter(object):
         else: 
             posy_med = int(posy_med)
 
-        posy_objmask = [int(posy_med-posy_d/2.), int(posy_med-posy_d/2.+1)]
+        posy_objmask = [int(posy_med-posy_width/2.), int(posy_med-posy_width/2.+1)]
         Npix = posy_objmask[1] - posy_objmask[0]
 
         # --------------------
@@ -227,32 +251,35 @@ class BinoPlotter(object):
                 
                 norm_err1D = err1D/np.nanmax(Nin)     
                 ax.fill_between(self.waveA, -3, norm_err1D-3,  
-                                color='0.7', zorder=0, label='Scaled noise')
+                                color='0.7', zorder=0, label='Scaled noise')       
                 
-                # Gaussian
-        #         mod = GaussianModel()
-            
-        #         x = self.waveA[where_inrange]
-        #         y = np.nan_to_num(Sin/Nin)
-                
-        #         pars = mod.guess(y, x=x)
-        #         out = mod.fit(y, pars, x=x)
-        # #         print(out.fit_report(min_correl=0.25))
-        #         ax.plot(x, out.best_fit)
-        #         print(out.params['height'])
-                
-        #         # half gaussian        
-        #         gmodel = Model(half_gauss)
-        #         params = gmodel.make_params()
-        #         params.add('totalSN', expr='amp * FWHM * 1.06 / 2.')
+                if fit:
+                    
+                    x = self.waveA[where_inrange]
+                    y = np.nan_to_num(Sin/Nin)
+                    
+                    # Gaussian
+                    mod = GaussianModel()
 
-        #         result = gmodel.fit(y, x=x, params=params,
-        #                             amp=out.params['height'].value, 
-        #                             cen=out.params['center'].value, 
-        #                             FWHM=out.params['fwhm'].value)
-        #         print(result.fit_report(min_correl=0.25))
-                
-        #         ax.plot(x, result.best_fit)
+                    pars = mod.guess(y, x=x)
+
+                    out = mod.fit(y, pars, x=x)
+                    print(out.fit_report(min_correl=0.25))
+                    ax.plot(x, out.best_fit)
+
+                    # half gaussian        
+                    gmodel = Model(half_gauss)
+
+                    params = gmodel.make_params()
+                    params.add('totalSN', expr='amp * FWHM * 1.06 / 2.')
+
+                    result = gmodel.fit(y, x=x, params=params,
+                                        amp=out.params['height'].value, 
+                                        cen=out.params['center'].value, 
+                                        FWHM=out.params['fwhm'].value)
+                    print(result.fit_report(min_correl=0.25))
+                    
+                    ax.plot(x, result.best_fit)
                 
                 ax.set_ylim(-3, 1.1*np.nanmax(Sin/Nin))                
                 ax.set_ylabel('S/N')
@@ -260,9 +287,37 @@ class BinoPlotter(object):
             else:
                 ax.plot(self.waveA, spec1D, c='tab:orange', drawstyle='steps-mid', lw=3, label='Flux')
                 ax.fill_between(self.waveA, -err1D, err1D, color='0.7', step='mid', zorder=0, label='Noise')
-                ax.set_ylim(-3*np.nanstd(Sin), 3*np.std(Sin))
+
+                if fit:
+                    x = self.waveA[where_inrange]
+                    y = np.nan_to_num(Sin)
+                    
+                    # Gaussian
+                    mod = GaussianModel()
+
+                    pars = mod.guess(y, x=x)
+
+                    out = mod.fit(y, pars, x=x)
+                    print(out.fit_report(min_correl=0.25))
+                    ax.plot(x, out.best_fit)
+
+                    # half gaussian        
+                    gmodel = Model(half_gauss)
+
+                    params = gmodel.make_params()
+                    params.add('Ftot', expr='amp * FWHM * 1.06 / 2.')
+
+                    result = gmodel.fit(y, x=x, params=params,
+                                        amp=out.params['height'].value, 
+                                        cen=out.params['center'].value, 
+                                        FWHM=out.params['fwhm'].value)
+                    print(result.fit_report(min_correl=0.25))
+                    
+                    ax.plot(x, result.best_fit)
+
+                ax.set_ylim(-3*np.nanstd(Sin), 1.2*np.nanmax(Sin))
                 
-                ax.set_ylabel('Flux [uncalib]')
+                ax.set_ylabel('Flux [%s]' % flux_unit)
             
             ax.annotate(plottitle, xy=(0.,0.94), xycoords='axes fraction')
             ax.axvline(wave_lineA, ymin=0.6, ymax=1., lw=2, c='k', ls='dashed', label='Literature $z_\mathrm{spec}$')

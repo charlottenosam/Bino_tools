@@ -24,7 +24,19 @@ from astropy.io import fits
 arcsec_per_mm = 5.98802
 arcsec_per_px = 0.24
 
-def bino_get_obj_ypos(dark_fname):
+def bino_get_obj_ypos(fname, type='slits2D'):
+
+    if type == 'dark':
+        ypos = get_ypos_from_darks(fname)
+    elif type == 'slits2D':
+        ypos = get_ypos_from_2Dslits(fname)
+
+    return ypos
+
+def get_ypos_from_darks(dark_fname):
+    """
+    Get ypos in pixels using table in darks
+    """
 
     # Load dark
     dark_hdu = fits.open(dark_fname)
@@ -57,5 +69,23 @@ def bino_get_obj_ypos(dark_fname):
 
     slit_height_px   = np.array([item for sublist in slit_height_px for item in sublist])
     target_offset_px = np.array([item for sublist in target_offset_px for item in sublist])
+
+    return target_offset_px
+
+
+def get_ypos_from_2Dslits(slits2D_fname):
+    """
+    Get ypos in pixels using headers of 2D slits
+    """
+
+    # Load file
+    slits2D_hdu = fits.open(slits2D_fname)
+
+    target_offset_px = []
+
+    for slit in slits2D_hdu[1:]:
+        target_offset_px.append(slit.header['SLITYPIX'])
+
+    target_offset_px = np.array(target_offset_px)
 
     return target_offset_px
