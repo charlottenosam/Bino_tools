@@ -34,3 +34,20 @@ def insensitive_glob(pattern):
     def either(c):
         return '[%s%s]'%(c.lower(),c.upper()) if c.isalpha() else c
     return glob.glob(''.join(map(either,pattern)))
+
+def f_cont(m, wave):
+    """
+    Get continuum flux density at observed wavelength 
+    in [erg/cm^2/s/A]
+    
+    Input:
+        m       [AB] apparent mag 
+        wave    [A] observed frame wavelength
+    """
+    f0  = 3.631E-20  # erg/s/Hz/cm2
+    c   = 3.E5       # km/s
+    c_A = c * 1.E13  # km/s into A/s
+    
+    fcont = f0 * 10**(-0.4*m) * c_A / wave**2.
+        
+    return fcont
