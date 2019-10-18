@@ -175,6 +175,7 @@ class FluxCalBino(object):
         
             return smoothed_calibration
 
+
     
 if __name__ == "__main__":
 

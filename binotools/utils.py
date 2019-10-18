@@ -12,8 +12,24 @@
 import pandas as pd
 import numpy as np
 import glob
+import astropy.io.fits as fits
 
 c=3.e5
+
+def get_wave_A_from_spec2D(spec2D_file):
+    """
+    Get wavelength array [Angstrom] from 2d spectra
+    """
+    hdu_list  = fits.open(spec2D_file)
+
+    spec2D = hdu_list[1].data
+
+    # # Get wavelength vector
+    header  = hdu_list[1].header
+    nstep   = spec2D.shape[1]
+    wave_nm = header['CRVAL1'] + np.linspace(0., nstep*header['CDELT1'], nstep)
+    wave_A  = wave_nm * 10.
+    return wave_A
 
 def half_gauss(x, amp, cen, FWHM):
     """
