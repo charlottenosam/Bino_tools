@@ -27,7 +27,8 @@ class TelluricCorrection(object):
         """
         Input wavelength array must = transmission wavelength array
         """
-        trans_tab = np.genfromtxt(calib_dir+'BLAS_2019A_transmission.txt', names=True)
+        self.trans_file = calib_dir+transmission_filename
+        trans_tab = np.genfromtxt(self.trans_file, names=True)
 
         self.transmission = trans_tab['transmission']
         self.wave_nm      = trans_tab['wave_nm']
@@ -61,7 +62,12 @@ class TelluricCorrection(object):
         
         flux_corr = self.telluric_correction(wave, flux_in, alpha, beta)
         
-        RMS = np.nanstd(flux_corr[self.mask_telluric])
+        if flux_corr.ndim > 1:
+            flux_corr_masked = flux_corr[:,self.mask_telluric]
+        else:
+            flux_corr_masked = flux_corr[self.mask_telluric]
+
+        RMS = np.nanstd(flux_corr_masked)
 
         return RMS
 
